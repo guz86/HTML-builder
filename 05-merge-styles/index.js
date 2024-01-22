@@ -11,7 +11,6 @@ async function removeBundle() {
     const bundleStats = await stat(outputBundleFile);
     if (bundleStats.isFile()) {
       await unlink(outputBundleFile);
-      console.log(`File ${outputBundleFile} removed.`);
     }
   } catch (err) {
     if (err.code !== 'ENOENT') {
@@ -24,22 +23,32 @@ async function createBundle() {
   try {
     const files = await readdir(stylesPath, { withFileTypes: true });
     const output = fs.createWriteStream(outputBundleFile);
+    let pendingReads = 0;
     for (const file of files) {
       const fileStylesPath = path.join(stylesPath, file.name);
       const fileStats = await stat(fileStylesPath);
       if (fileStats.isFile() && path.extname(file.name) === '.css') {
+        pendingReads++;
         const readableStream = fs.createReadStream(fileStylesPath, 'utf-8');
+
         readableStream.on('data', (chunk) => {
           output.write(chunk);
         });
 
         readableStream.on('end', () => {
-          output.end();
+          pendingReads--;
+          if (pendingReads === 0) {
+            output.end();
+          }
         });
 
-        readableStream.on('error', (error) =>
-          console.log('Error', error.message),
-        );
+        readableStream.on('error', (error) => {
+          console.log('Error', error.message);
+          pendingReads--;
+          if (pendingReads === 0) {
+            output.end();
+          }
+        });
       }
     }
   } catch (err) {
